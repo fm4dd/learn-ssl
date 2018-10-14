@@ -26,6 +26,7 @@ With OpenSSL's documentation being rather sparse,the following sample programs d
 | 13 | [pkcs12test.c](pkcs12test.c) | How to create a PKCS12 cert bundle (e.g. for use with Windows S/MIME) |
 | 14 | [set_asn1_time.c](set_asn1_time.c) | How to create/set the ASN1 date and time for X509 digital certificates |
 | 15 | [sslconnect.c](sslconnect.c) | How to make a basic SSL/TLS connection and get the servers certificate |
+| 16 | [keycompare.c](keycompare.c) | How to  check if a private key belongs to a X509 digital certificate |
 
 ### Notes
 
