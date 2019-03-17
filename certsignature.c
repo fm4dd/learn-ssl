@@ -2,6 +2,7 @@
  * file:        certsignature.c                                 *
  * purpose:     Example to extract and display cert signatures  *
  * author:      09/30/2012 Frank4DD                             *
+ * update:      03/17/2019 OpenSSL 1.1.x _get0_ function use    *
  *                                                              *
  * compile: gcc -o certsignature certsignature.c -lssl -lcrypto *
  * ------------------------------------------------------------ */
@@ -19,13 +20,13 @@ int X509_signature_dump(BIO *bp, const ASN1_STRING *sig, int indent);
 
 int main() {
 
-  const char cert_filestr[] = "./cert-file.pem";
-  ASN1_STRING     *asn1_sig = NULL;
-  X509_ALGOR      *sig_type = NULL;
-  size_t          sig_bytes = 0;
-  BIO              *certbio = NULL;
-  BIO               *outbio = NULL;
-  X509                *cert = NULL;
+  const char       cert_filestr[] = "./cert-file.pem";
+  const ASN1_BIT_STRING *asn1_sig = NULL;
+  const X509_ALGOR      *sig_type = NULL;
+  size_t                sig_bytes = 0;
+  BIO                    *certbio = NULL;
+  BIO                     *outbio = NULL;
+  X509                      *cert = NULL;
   int ret;
 
   /* ---------------------------------------------------------- *
@@ -51,8 +52,9 @@ int main() {
   /* ---------------------------------------------------------- *
    * Extract the certificate's signature data.                  *
    * ---------------------------------------------------------- */
-  sig_type = cert->sig_alg;
-  asn1_sig = cert->signature;
+  X509_get0_signature(&asn1_sig, &sig_type, cert);
+  //sig_type = cert->sig_alg;
+  //asn1_sig = cert->signature;
   sig_bytes = asn1_sig->length;
 
   /* ---------------------------------------------------------- *
@@ -66,7 +68,7 @@ int main() {
   /* ---------------------------------------------------------- *
    * Print the signature length here                            *
    * ---------------------------------------------------------- */
-  BIO_printf(outbio, "Signature Length:\n%d Bytes\n\n", sig_bytes);
+  BIO_printf(outbio, "Signature Length:\n%ld Bytes\n\n", sig_bytes);
 
   /* ---------------------------------------------------------- *
    * Print the signature data here                              *
