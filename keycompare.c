@@ -5,35 +5,64 @@
  * author:      05/15/2015 Frank4DD                             *
  *                                                              *
  *  gcc -o keycompare keycompare.c -lssl -lcrypto               *
+ *                                                              *
+ * Updated to work with OpenSSL version 3, as well as old 1.1.1 *
  * ------------------------------------------------------------ */
 
 #include <openssl/bio.h>
 #include <openssl/err.h>
 #include <openssl/pem.h>
-#include <openssl/x509.h>
 #include <string.h>
 
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+#include <openssl/evp.h>
+#include <openssl/core_names.h>
+static void set_optional_params(OSSL_PARAM *);
+#else
+const unsigned char pad = RSA_PKCS1_PADDING;
+#endif
+
 int RSAcmp_mod(EVP_PKEY *, EVP_PKEY *);
-int RSAencrypt(EVP_PKEY *, const char *);
+int RSAencrypt(EVP_PKEY *, const unsigned char *);
 int RSAdecrypt(EVP_PKEY *, int);
+ECDSA_SIG *ECsign(EVP_PKEY *, const unsigned char *);
+int ECverify(EVP_PKEY *, const unsigned char *, ECDSA_SIG *);
 unsigned char *encdata = NULL;
 unsigned char *decdata = NULL;
-const unsigned char pad = RSA_PKCS1_PADDING;
 int teststr_len, ret;
 
+/* ---------------------------------------------------------- *
+ * RSAcmp_mod compares RSA public modulus n of pub and priv   *
+ * returns 0 if key modulus match, and 1 for mismatch         *
+ * -----------------------------------------------------------*/
 int RSAcmp_mod(EVP_PKEY *priv, EVP_PKEY *pub) {
   int match;
 
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
+  /* -------------------------------------------------------- *
+   * Old code for OpenSSL versions before version 3.0         *
+   * ---------------------------------------------------------*/
+  const BIGNUM *privrsa_mod;
+  const BIGNUM *pubrsa_mod;
   RSA *privrsa = EVP_PKEY_get1_RSA(priv);
-  BIGNUM *privrsa_mod = privrsa->n;
-  char *privrsa_mod_hex = BN_bn2hex(privrsa_mod);
-
+  RSA_get0_key(privrsa, &privrsa_mod, NULL, NULL);
   RSA *pubrsa = EVP_PKEY_get1_RSA(pub);
-  BIGNUM *pubrsa_mod = pubrsa->n;
+  RSA_get0_key(pubrsa, &pubrsa_mod, NULL, NULL);
+#else
+  /* -------------------------------------------------------- *
+   * New code for latest OpenSSL version 3.0                  *
+   * ---------------------------------------------------------*/
+  BIGNUM *privrsa_mod = NULL;
+  BIGNUM *pubrsa_mod = NULL;
+  EVP_PKEY_get_bn_param(priv, OSSL_PKEY_PARAM_RSA_N, &privrsa_mod);
+  EVP_PKEY_get_bn_param(pub, OSSL_PKEY_PARAM_RSA_N, &pubrsa_mod);
+#endif
+
+  char *privrsa_mod_hex = BN_bn2hex(privrsa_mod);
   char *pubrsa_mod_hex = BN_bn2hex(pubrsa_mod);
 
   printf("priv: %s\n", privrsa_mod_hex);
-  printf("pub: %s\n", pubrsa_mod_hex);
+  printf(" pub: %s\n", pubrsa_mod_hex);
 
   if(strcmp(privrsa_mod_hex, pubrsa_mod_hex) == 0)
     match = 0; // the keys modulus is matching
@@ -42,47 +71,49 @@ int RSAcmp_mod(EVP_PKEY *priv, EVP_PKEY *pub) {
 
   OPENSSL_free(privrsa_mod_hex);
   OPENSSL_free(pubrsa_mod_hex);
+
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
   RSA_free(privrsa);
   RSA_free(pubrsa);
+#endif
   return match;
 }
 
 int main() {
 
-  const char cert_filestr[] = "./cert.pem";
-  const char pkey_filestr[] = "./pkey.pem";
-  const char cleartextstr[] = "This line will be encrypted and, if keys match, it decrypts again.";
+  const char cert_filestr[] = "./demo/cert-file.pem";
+  const char pkey_filestr[] = "./demo/cert-file.key";
+  const unsigned char cleartextstr[] = "This line will be encrypted and, if keys match, it decrypts again.";
 
           EVP_PKEY *privkey = NULL;
            EVP_PKEY *pubkey = NULL;
   BIO              *certbio = NULL;
   BIO              *pkeybio = NULL;
-  BIO               *outbio = NULL;
   X509                *cert = NULL;
   int i, enc_len, dec_len;
 
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
   /* ---------------------------------------------------------- *
    * These function calls initialize openssl for correct work.  *
    * ---------------------------------------------------------- */
   OpenSSL_add_all_algorithms();
   ERR_load_BIO_strings();
   ERR_load_crypto_strings();
+#endif
 
   /* ---------------------------------------------------------- *
    * Create the Input/Output BIO's.                             *
    * ---------------------------------------------------------- */
   certbio = BIO_new(BIO_s_file());
   pkeybio = BIO_new(BIO_s_file());
-  outbio  = BIO_new(BIO_s_file());
-  outbio  = BIO_new_fp(stdout, BIO_NOCLOSE);
 
   /* ---------------------------------------------------------- *
    * Load the certificate from file (PEM).                      *
    * ---------------------------------------------------------- */
   ret = BIO_read_filename(certbio, cert_filestr);
   if (! (cert = PEM_read_bio_X509(certbio, NULL, 0, NULL))) {
-    BIO_printf(outbio, "Error loading cert into memory\n");
-    exit(-1);
+    printf("Error loading cert into memory\n");
+    exit(1);
   }
 
   /* ---------------------------------------------------------- *
@@ -90,16 +121,16 @@ int main() {
    * ---------------------------------------------------------- */
   ret = BIO_read_filename(pkeybio, pkey_filestr);
   if (! (privkey = PEM_read_bio_PrivateKey(pkeybio, NULL, 0, NULL))) {
-    BIO_printf(outbio, "Error loading private key into memory\n");
-    exit(-1);
+    printf("Error loading private key into memory\n");
+    exit(1);
   }
 
   /* ---------------------------------------------------------- *
    * Extract the certificate's public key data.                 *
    * ---------------------------------------------------------- */
   if ((pubkey = X509_get_pubkey(cert)) == NULL) {
-    BIO_printf(outbio, "Error getting public key from certificate");
-    exit(-1);
+    printf("Error getting public key from certificate");
+    exit(1);
   }
 
   /* ---------------------------------------------------------- *
@@ -107,62 +138,76 @@ int main() {
    * ---------------------------------------------------------- */
   /* display the key type and size here */
   if (pubkey) {
-    teststr_len = strlen(cleartextstr);
-    BIO_printf(outbio, "Cleartext string [%d bytes]:\n\"%s\"\n\n",
-                       (int) teststr_len, cleartextstr);
+    teststr_len = strlen( (const char *) cleartextstr);
 
-    switch (pubkey->type) {
+    switch (EVP_PKEY_id(pubkey)) {
       case EVP_PKEY_RSA:
-        BIO_printf(outbio, "Encrypting with RSA public key [%d bit]. ", EVP_PKEY_bits(pubkey));
-        enc_len = RSAencrypt(pubkey, cleartextstr);
-        BIO_printf(outbio, "Encrypted data [%d bytes]:\n", enc_len);
-        for(i=0;i<enc_len;i++) { BIO_printf(outbio, "%02x ", encdata[i]); }
+        printf("Detected RSA pubkey [%d bit]. RSA modulus (n) check:\n", EVP_PKEY_bits(pubkey));
+        if(RSAcmp_mod(privkey, pubkey) == 0)
+          printf("Success: RSA modulus (n) matches between public and private key parts\n\n");
+        else
+          printf("Failure: RSA modulus (n) mismatch between public and private key parts\n\n");
 
-        BIO_printf(outbio, "\n\nDecrypting with RSA private key [%d bit]. ", EVP_PKEY_bits(privkey));
+        printf("Cleartext string check [%d bytes]:\n\"%s\"\n\n",
+                       (int) teststr_len, cleartextstr);
+        printf("Encrypting text with RSA public key [%d bit]. ", EVP_PKEY_bits(pubkey));
+        enc_len = RSAencrypt(pubkey, cleartextstr);
+        printf("Encrypted data (hex) [%d bytes]:\n", enc_len);
+        for(i=0;i<enc_len;i++) { printf("%02x ", encdata[i]); }
+
+        printf("\n\nDecrypting with RSA private key [%d bit]. ", EVP_PKEY_bits(privkey));
         dec_len = RSAdecrypt(privkey, enc_len);
         if (dec_len == -1) 
-         BIO_printf(outbio, "Failure: Keys don't match!");
+         printf("Failure: Keys don't match!");
         else {
-          BIO_printf(outbio, "Decrypted data [%d bytes]:\n\"%s\"\n", dec_len, decdata);
+          printf("Decrypted data [%d bytes]:\n\"%s\"\n", dec_len, decdata);
         }
-        RSAcmp_mod(privkey, pubkey);
         break;
       case EVP_PKEY_EC:
-        BIO_printf(outbio, "%d bit EC Key\n\n", EVP_PKEY_bits(pubkey));
-        //sig = ECsign();
-        //BIO_printf(outbio, "\n\nVerifying signature with EC private key [%d bit]. ", EVP_PKEY_bits(privkey));
-        //dec_len = RSAdecrypt(privkey, enc_len);
+        printf("Detected EC Key[%d bit].\n\n", EVP_PKEY_bits(pubkey));
+        printf("Creating signature with EC private key [%d bit]. ", EVP_PKEY_bits(privkey));
+        ECDSA_SIG *sig = ECsign(privkey, cleartextstr);
+        printf("\n\nVerifying signature with EC public key [%d bit]. ", EVP_PKEY_bits(pubkey));
+        ret = ECverify(pubkey, cleartextstr, sig);
         break;
       default:
-        BIO_printf(outbio, "%d bit unknown Key.\n\n", EVP_PKEY_bits(pubkey));
-        exit(-1);
+        printf("Unknown Key [%d bit].\n\n", EVP_PKEY_bits(pubkey));
+        exit(1);
         break;
     }
   }
 
-  //if(!PEM_write_bio_PUBKEY(outbio, pubkey))
- //   BIO_printf(outbio, "Error writing public key data in PEM format");
-
+  /* ---------------------------------------------------------- *
+   * Free up all structures                                     *
+   * ---------------------------------------------------------- */
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
   EVP_PKEY_free(pubkey);
   BIO_free_all(certbio);
-  BIO_free_all(outbio);
+#endif
   exit(0);
 }
 
 /* ---------------------------------------------------------- *
  * RSA encrypt the teststring with the certificate public key *
  * ---------------------------------------------------------- */
-int RSAencrypt(EVP_PKEY *key, const char *teststring) {
-  int keysize, rsa_outlen = 0;
+int RSAencrypt(EVP_PKEY *key, const unsigned char *teststring) {
+  int rsa_outlen = 0;
+  encdata = OPENSSL_zalloc(1024); // allocate and zero 1kb space
+
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
   RSA *pubrsa = NULL;
-
   pubrsa = EVP_PKEY_get1_RSA(key);
-  keysize = RSA_size(pubrsa);
-  encdata = OPENSSL_malloc(keysize);
-
   rsa_outlen = RSA_public_encrypt(teststr_len, teststring, encdata, pubrsa, pad);
-
   RSA_free(pubrsa);
+#else
+  EVP_PKEY_CTX *ctx = NULL;
+  ctx = EVP_PKEY_CTX_new_from_pkey(NULL, key, NULL);
+  OSSL_PARAM params[2];
+  set_optional_params(params);
+  EVP_PKEY_encrypt_init_ex(ctx, params);
+  EVP_PKEY_encrypt(ctx, encdata, (size_t *) &rsa_outlen, teststring, teststr_len);
+  EVP_PKEY_CTX_free(ctx);
+#endif
   return rsa_outlen;
 }
 
@@ -170,42 +215,82 @@ int RSAencrypt(EVP_PKEY *key, const char *teststring) {
  * Decrypt a teststring with the certificate private key      *
  * ---------------------------------------------------------- */
 int RSAdecrypt(EVP_PKEY *key, int rsa_inlen) {
-  int keysize, rsa_outlen = 0;
+  int rsa_outlen = 0;
+  decdata = OPENSSL_zalloc(1024); // allocate and zero 1kb space
+
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
   RSA *privrsa = NULL;
-
   privrsa = EVP_PKEY_get1_RSA(key);
-  keysize = RSA_size(privrsa);
-  decdata = OPENSSL_malloc(keysize);
-
   rsa_outlen = RSA_private_decrypt(rsa_inlen, encdata, decdata, privrsa, pad);
-
   RSA_free(privrsa);
+#else
+  EVP_PKEY_CTX *ctx = NULL;
+  ctx = EVP_PKEY_CTX_new_from_pkey(NULL, key, NULL);
+  OSSL_PARAM params[2];
+  set_optional_params(params);
+  EVP_PKEY_decrypt_init_ex(ctx, params);
+  EVP_PKEY_decrypt(ctx, decdata, (size_t *) &rsa_outlen, encdata, rsa_inlen);
+#endif
   return rsa_outlen;
 }
 
 /* ---------------------------------------------------------- *
- * Sign the teststring with the certificate public key        *
+ * Sign the teststring with the certificate private key       *
  * ---------------------------------------------------------- */
-  ECDSA_SIG *ECsign(EVP_PKEY *key, const char *teststring) {
+ECDSA_SIG *ECsign(EVP_PKEY *key, const unsigned char *teststring) {
   ECDSA_SIG *sig;
-  EC_KEY *pubeckey = NULL;
 
-  pubeckey = EVP_PKEY_get1_EC_KEY(key);
-  sig = ECDSA_do_sign(teststring, teststr_len, pubeckey);
-
-  EC_KEY_free(pubeckey);
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
+  EC_KEY *priveckey = NULL;
+  priveckey = EVP_PKEY_get1_EC_KEY(key);
+  sig = ECDSA_do_sign(teststring, teststr_len, priveckey);
+  EC_KEY_free(priveckey);
+#else
+  EVP_MD_CTX *ctx = NULL;
+  ctx = EVP_MD_CTX_new();
+  unsigned char *sigstr;
+  size_t *sig_len;
+  EVP_DigestSign(ctx, sigstr, sig_len, teststring, teststr_len);
+  sig = d2i_ECDSA_SIG(NULL, (const unsigned char **) &sigstr, (long) &sig_len);
+  EVP_MD_CTX_free(ctx);
+#endif
   return sig;
 }
 
 /* ---------------------------------------------------------- *
- * Validate the signature with the certificate private key    *
+ * Validate the signature with the certificate public key     *
  * ---------------------------------------------------------- */
-int ECverify(EVP_PKEY *key, const char *teststring, ECDSA_SIG *sig) {
-  EC_KEY *priveckey = NULL;
+int ECverify(EVP_PKEY *key, const unsigned char *teststring, ECDSA_SIG *sig) {
 
-  priveckey = EVP_PKEY_get1_EC_KEY(key);
-  ret = ECDSA_do_verify(teststring, teststr_len, sig, priveckey);
-
-  EC_KEY_free(priveckey);
+  teststr_len = strlen( (const char *) teststring);
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
+  EC_KEY *pubeckey = NULL;
+  pubeckey = EVP_PKEY_get1_EC_KEY(key);
+  ret = ECDSA_do_verify(teststring, teststr_len, sig, pubeckey);
+  EC_KEY_free(pubeckey);
+#else
+  EVP_MD_CTX *ctx = NULL;
+  ctx = EVP_MD_CTX_new();
+  unsigned char *sigstr;
+  i2d_ECDSA_SIG(sig, &sigstr);
+  size_t sig_len = strlen( (const char *) sigstr);
+  /* ---------------------------------------------------------- *
+   * Successful verification returns 1                          *
+   * ---------------------------------------------------------- */
+    ret = EVP_DigestVerify(ctx, sigstr, sig_len, teststring, teststr_len);
+   EVP_MD_CTX_free(ctx);
+#endif
   return ret;
 }
+
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+/* ------------------------------------------------------------ *
+ * Helper function Set optional parameters for RSA OAEP Padding *
+ * ------------------------------------------------------------ */
+static void set_optional_params(OSSL_PARAM *p) {
+    /* "pkcs1" is used by default if the padding mode is not set */
+    *p++ = OSSL_PARAM_construct_utf8_string(OSSL_ASYM_CIPHER_PARAM_PAD_MODE,
+                                            OSSL_PKEY_RSA_PAD_MODE_PKCSV15, 0);
+    *p = OSSL_PARAM_construct_end();
+}
+#endif

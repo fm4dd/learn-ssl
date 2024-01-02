@@ -2,6 +2,7 @@
 
 ### Edit the OpenSSL configuration
 
+```
 sudo vi /usr/lib/ssl/openssl.cnf
 ...
 ####################################################################
@@ -21,6 +22,7 @@ crlnumber       = $dir/crlnumber         # the current crl number
 crl             = $dir/crl.pem           # The current CRL
 private_key     = $dir/private/cakey.pem # The private key
 ...
+```
 
 ### Create the CLR directory and certificate database
 

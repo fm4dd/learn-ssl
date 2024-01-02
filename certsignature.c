@@ -20,21 +20,13 @@ int X509_signature_dump(BIO *bp, const ASN1_STRING *sig, int indent);
 
 int main() {
 
-  const char       cert_filestr[] = "./cert-file.pem";
+  const char       cert_filestr[] = "./demo/cert-file.pem";
   const ASN1_BIT_STRING *asn1_sig = NULL;
   const X509_ALGOR      *sig_type = NULL;
   size_t                sig_bytes = 0;
   BIO                    *certbio = NULL;
   BIO                     *outbio = NULL;
   X509                      *cert = NULL;
-  int ret;
-
-  /* ---------------------------------------------------------- *
-   * These function calls initialize openssl for correct work.  *
-   * ---------------------------------------------------------- */
-  OpenSSL_add_all_algorithms();
-  ERR_load_BIO_strings();
-  ERR_load_crypto_strings();
 
   /* ---------------------------------------------------------- *
    * Create the Input/Output BIO's.                             *
@@ -45,9 +37,11 @@ int main() {
   /* ---------------------------------------------------------- *
    * Load the certificate from file (PEM).                      *
    * ---------------------------------------------------------- */
-  ret = BIO_read_filename(certbio, cert_filestr);
-  if (! (cert = PEM_read_bio_X509(certbio, NULL, 0, NULL)))
-    BIO_printf(outbio, "Error loading cert into memory\n");
+  BIO_read_filename(certbio, cert_filestr);
+  if (! (cert = PEM_read_bio_X509(certbio, NULL, 0, NULL))) {
+    BIO_printf(outbio, "Error loading cert into memory: %s\n", cert_filestr);
+    exit(1);
+  }
 
   /* ---------------------------------------------------------- *
    * Extract the certificate's signature data.                  *

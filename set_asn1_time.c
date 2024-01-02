@@ -19,13 +19,6 @@ int main() {
   ASN1_TIME *str_asn1time, *now_asn1time;
 
   /* ---------------------------------------------------------- *
-   * These function calls initialize openssl for correct work.  *
-   * ---------------------------------------------------------- */
-  OpenSSL_add_all_algorithms();
-  ERR_load_BIO_strings();
-  ERR_load_crypto_strings();
-
-  /* ---------------------------------------------------------- *
    * Create the Input/Output BIO's.                             *
    * ---------------------------------------------------------- */
   outbio  = BIO_new(BIO_s_file());

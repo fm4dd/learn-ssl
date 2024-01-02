@@ -13,19 +13,11 @@
 
 int main() {
 
-  const char cert_filestr[] = "./cert-file.pem";
+  const char cert_filestr[] = "./demo/cert-file.pem";
              EVP_PKEY *pkey = NULL;
   BIO              *certbio = NULL;
   BIO               *outbio = NULL;
   X509                *cert = NULL;
-  int ret;
-
-  /* ---------------------------------------------------------- *
-   * These function calls initialize openssl for correct work.  *
-   * ---------------------------------------------------------- */
-  OpenSSL_add_all_algorithms();
-  ERR_load_BIO_strings();
-  ERR_load_crypto_strings();
 
   /* ---------------------------------------------------------- *
    * Create the Input/Output BIO's.                             *
@@ -36,9 +28,11 @@ int main() {
   /* ---------------------------------------------------------- *
    * Load the certificate from file (PEM).                      *
    * ---------------------------------------------------------- */
-  ret = BIO_read_filename(certbio, cert_filestr);
-  if (! (cert = PEM_read_bio_X509(certbio, NULL, 0, NULL)))
-    BIO_printf(outbio, "Error loading cert into memory\n");
+  BIO_read_filename(certbio, cert_filestr);
+  if (! (cert = PEM_read_bio_X509(certbio, NULL, 0, NULL))) {
+    BIO_printf(outbio, "Error loading cert into memory: %s\n", cert_filestr);
+    exit(1);
+  }
 
   /* ---------------------------------------------------------- *
    * Extract the certificate's public key data.                 *
@@ -51,7 +45,7 @@ int main() {
    * ---------------------------------------------------------- */
   /* display the key type and size here */
   if (pkey) {
-    switch (pkey->type) {
+    switch (EVP_PKEY_base_id(pkey))  {
       case EVP_PKEY_RSA:
         BIO_printf(outbio, "%d bit RSA Key\n\n", EVP_PKEY_bits(pkey));
         break;
@@ -59,7 +53,7 @@ int main() {
         BIO_printf(outbio, "%d bit DSA Key\n\n", EVP_PKEY_bits(pkey));
         break;
       default:
-        BIO_printf(outbio, "%d bit non-RSA/DSA Key\n\n", EVP_PKEY_bits(pkey));
+        BIO_printf(outbio, "%d bit unknown Key\n\n", EVP_PKEY_bits(pkey));
         break;
     }
   }

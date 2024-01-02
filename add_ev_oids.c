@@ -4,6 +4,10 @@
  * author:      10/03/2012 Frank4DD                             *
  *                                                              *
  * compile:     gcc -o add_ev_oids add_ev_oids.c -lssl -lcrypto *
+ *                                                              *
+ * Note this was code from a time when EV certs got invented.   *
+ * EV support was added later on, the oid addition is no longer *
+ * needed. EV certs are dead by now, obsoleting this program.   *
  * ------------------------------------------------------------ */
 
 #include <openssl/bio.h>
@@ -18,19 +22,11 @@ void add_missing_ev_oids();
 
 int main() {
 
-  const char cert_filestr[] = "./cert-file.pem";
+  const char cert_filestr[] = "./demo/evcert-file.pem";
   BIO              *certbio = NULL;
   BIO               *outbio = NULL;
   X509                *cert = NULL;
   X509_NAME    *certsubject = NULL;
-  int ret;
-
-  /* ---------------------------------------------------------- *
-   * These function calls initialize openssl for correct work.  *
-   * ---------------------------------------------------------- */
-  OpenSSL_add_all_algorithms();
-  ERR_load_BIO_strings();
-  ERR_load_crypto_strings();
 
   /* ---------------------------------------------------------- *
    * Create the Input/Output BIO's.                             *
@@ -41,9 +37,11 @@ int main() {
   /* ---------------------------------------------------------- *
    * Load the certificate from file (PEM).                      *
    * ---------------------------------------------------------- */
-  ret = BIO_read_filename(certbio, cert_filestr);
-  if (! (cert = PEM_read_bio_X509(certbio, NULL, 0, NULL)))
-    BIO_printf(outbio, "Error loading cert into memory\n");
+  BIO_read_filename(certbio, cert_filestr);
+  if (! (cert = PEM_read_bio_X509(certbio, NULL, 0, NULL))) {
+    BIO_printf(outbio, "Error loading cert into memory: %s\n", cert_filestr);
+    exit(1);
+  }
 
   /* ---------------------------------------------------------- *
    * Print the certificate subject here                         *
@@ -75,7 +73,6 @@ int main() {
  * OpenSSL seems to lack a few OID's used for EV certificates *
  * ---------------------------------------------------------- */
 void add_missing_ev_oids() {
-  int nid;
   /* --------------------------------------------------------- *
    * OBJ_create():                                             *
    * First field is the OID, which will be converted to DER    *
@@ -83,15 +80,15 @@ void add_missing_ev_oids() {
    * this OID. The descriptions will not be included as the    *
    * extension identifier, but the DER encoding of the OID.    *
    * --------------------------------------------------------- */
-  nid = OBJ_create("1.3.6.1.4.1.311.60.2.1.1",
+  OBJ_create("1.3.6.1.4.1.311.60.2.1.1",
                    "ASN.1 - X520LocalityName as specified in RFC 3280",
                    "jurisdictionOfIncorporationLocalityName");
 
-  nid = OBJ_create("1.3.6.1.4.1.311.60.2.1.2",
+  OBJ_create("1.3.6.1.4.1.311.60.2.1.2",
                    "ASN.1 - X520StateOrProvinceName as specified in RFC 3280",
                    "jurisdictionOfIncorporationStateOrProvinceName");
 
-  nid = OBJ_create("1.3.6.1.4.1.311.60.2.1.3",
+  OBJ_create("1.3.6.1.4.1.311.60.2.1.3",
                    "ASN.1 - X520countryName as specified in RFC 3280",
                    "jurisdictionOfIncorporationCountryName");
 }

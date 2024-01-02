@@ -13,21 +13,14 @@
 
 int main() {
 
-  const char cert_filestr[] = "./cert-file.pem";
+  const char cert_filestr[] = "./demo/cert-file.pem";
   ASN1_INTEGER *asn1_serial = NULL;
   BIO              *certbio = NULL;
   BIO               *outbio = NULL;
   X509                *cert = NULL;
   const char *neg;
-  int ret, i;
+  int  i;
   long l;
-
-  /* ---------------------------------------------------------- *
-   * These function calls initialize openssl for correct work.  *
-   * ---------------------------------------------------------- */
-  OpenSSL_add_all_algorithms();
-  ERR_load_BIO_strings();
-  ERR_load_crypto_strings();
 
   /* ---------------------------------------------------------- *
    * Create the Input/Output BIO's.                             *
@@ -38,9 +31,11 @@ int main() {
   /* ---------------------------------------------------------- *
    * Load the certificate from file (PEM).                      *
    * ---------------------------------------------------------- */
-  ret = BIO_read_filename(certbio, cert_filestr);
-  if (! (cert = PEM_read_bio_X509(certbio, NULL, 0, NULL)))
-    BIO_printf(outbio, "Error loading cert into memory\n");
+  BIO_read_filename(certbio, cert_filestr);
+  if (! (cert = PEM_read_bio_X509(certbio, NULL, 0, NULL))) {
+    BIO_printf(outbio, "Error loading cert into memory: %s\n", cert_filestr);
+    exit(1);
+  }
 
   /* ---------------------------------------------------------- *
    * Extract the certificate's serial number.                   *
@@ -72,7 +67,7 @@ int main() {
   } else {
     neg=(asn1_serial->type == V_ASN1_NEG_INTEGER)?" (Negative)":"";
     //if (BIO_printf(outbio,"\n%12s%s","",neg) <= 0)
-    if (BIO_printf(outbio,"serial (openssl x509 -text   style): %s","",neg) <= 0)
+    if (BIO_printf(outbio,"serial (openssl x509 -text   style): %s ",neg) <= 0)
       BIO_printf(outbio, "Error during printing the serial.\n");
 
     for (i=0; i<asn1_serial->length; i++) {

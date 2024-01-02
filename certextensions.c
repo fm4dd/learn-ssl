@@ -10,24 +10,16 @@
 #include <openssl/bio.h>
 #include <openssl/err.h>
 #include <openssl/pem.h>
-#include <openssl/x509.h>
+#include <openssl/x509v3.h>
 
 int main() {
 
-  const char cert_filestr[] = "./cert-file.pem";
+  const char cert_filestr[] = "./demo/cert-file.pem";
   BIO              *certbio = NULL;
   BIO               *outbio = NULL;
   X509                *cert = NULL;
-  X509_CINF       *cert_inf = NULL;
-  STACK_OF(X509_EXTENSION) *ext_list;
-  int ret, i;
-
-  /* ---------------------------------------------------------- *
-   * These function calls initialize openssl for correct work.  *
-   * ---------------------------------------------------------- */
-  OpenSSL_add_all_algorithms();
-  ERR_load_BIO_strings();
-  ERR_load_crypto_strings();
+  const STACK_OF(X509_EXTENSION) *ext_list;
+  int i;
 
   /* ---------------------------------------------------------- *
    * Create the Input/Output BIO's.                             *
@@ -38,17 +30,16 @@ int main() {
   /* ---------------------------------------------------------- *
    * Load the certificate from file (PEM).                      *
    * ---------------------------------------------------------- */
-  ret = BIO_read_filename(certbio, cert_filestr);
-  if (! (cert = PEM_read_bio_X509(certbio, NULL, 0, NULL)))
-    BIO_printf(outbio, "Error loading cert into memory\n");
+  BIO_read_filename(certbio, cert_filestr);
+  if (! (cert = PEM_read_bio_X509(certbio, NULL, 0, NULL))) {
+    BIO_printf(outbio, "Error loading cert into memory: %s\n", cert_filestr);
+    exit(1);
+  }
 
   /* ---------------------------------------------------------- *
    * Extract the certificate's extensions                       *
    * ---------------------------------------------------------- */
-  cert_inf = cert->cert_info;
-
-  ext_list = cert_inf->extensions;
-
+  ext_list = X509_get0_extensions(cert);
   if(sk_X509_EXTENSION_num(ext_list) <= 0) return 1;
 
   /* ---------------------------------------------------------- *
@@ -66,7 +57,13 @@ int main() {
     i2a_ASN1_OBJECT(outbio, obj);
     BIO_printf(outbio, "\n");
 
-    X509V3_EXT_print(outbio, ext, NULL, NULL);
+    if (!X509V3_EXT_print(outbio, ext, 0, 2)) {
+    /* Some extensions (i.e. LogoType) have no handling    *
+     * defined, we need to print their content as hex data */
+      BIO_printf(outbio, "%*s", 2, "");
+      ASN1_STRING_print(certbio,(ASN1_STRING *)X509_EXTENSION_get_data(ext));
+    }
+
     BIO_printf(outbio, "\n");
   }
 

@@ -12,20 +12,14 @@
 #include <openssl/x509.h>
 
 int main() {
-  const char cert_filestr[] = "./cert-file.pem";
+  const char cert_filestr[] = "./demo/cert-file.pem";
   BIO              *certbio = NULL;
   BIO               *outbio = NULL;
   X509                *cert = NULL;
   const EVP_MD *fprint_type = NULL;
-  int ret, j, fprint_size;
+  int j;
+  unsigned int fprint_size;
   unsigned char fprint[EVP_MAX_MD_SIZE];
-
-  /* ---------------------------------------------------------- *
-   * These function calls initialize openssl for correct work.  *
-   * ---------------------------------------------------------- */
-  OpenSSL_add_all_algorithms();
-  ERR_load_BIO_strings();
-  ERR_load_crypto_strings();
 
   /* ---------------------------------------------------------- *
    * Create the Input/Output BIO's.                             *
@@ -36,9 +30,11 @@ int main() {
   /* ---------------------------------------------------------- *
    * Load the certificate from file (PEM).                      *
    * ---------------------------------------------------------- */
-  ret = BIO_read_filename(certbio, cert_filestr);
-  if (! (cert = PEM_read_bio_X509(certbio, NULL, 0, NULL)))
-    BIO_printf(outbio, "Error loading cert into memory\n");
+  BIO_read_filename(certbio, cert_filestr);
+  if (! (cert = PEM_read_bio_X509(certbio, NULL, 0, NULL))) {
+    BIO_printf(outbio, "Error loading cert into memory: %s\n", cert_filestr);
+    exit(1);
+  }
 
   /* ---------------------------------------------------------- *
    * Set the digest method and calculate the cert fingerprint   *

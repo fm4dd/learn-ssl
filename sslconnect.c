@@ -13,6 +13,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <openssl/bio.h>
 #include <openssl/ssl.h>
@@ -29,8 +30,7 @@ int create_socket(char[], BIO *);
 
 int main() {
 
-  char           dest_url[] = "https://www.hp.com";
-  BIO              *certbio = NULL;
+  char           dest_url[] = "https://fm4dd.com";
   BIO               *outbio = NULL;
   X509                *cert = NULL;
   X509_NAME       *certname = NULL;
@@ -38,20 +38,19 @@ int main() {
   SSL_CTX *ctx;
   SSL *ssl;
   int server = 0;
-  int ret, i;
 
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
   /* ---------------------------------------------------------- *
    * These function calls initialize openssl for correct work.  *
    * ---------------------------------------------------------- */
   OpenSSL_add_all_algorithms();
-  ERR_load_BIO_strings();
   ERR_load_crypto_strings();
   SSL_load_error_strings();
+#endif
 
   /* ---------------------------------------------------------- *
    * Create the Input/Output BIO's.                             *
    * ---------------------------------------------------------- */
-  certbio = BIO_new(BIO_s_file());
   outbio  = BIO_new_fp(stdout, BIO_NOCLOSE);
 
   /* ---------------------------------------------------------- *
@@ -161,7 +160,7 @@ int create_socket(char url_str[], BIO *out) {
   /* ---------------------------------------------------------- *
    * the hostname starts after the "://" part                   *
    * ---------------------------------------------------------- */
-  strncpy(hostname, strstr(url_str, "://")+3, sizeof(hostname));
+  strncpy(hostname, strstr(url_str, "://")+3, sizeof(hostname)-1);
 
   /* ---------------------------------------------------------- *
    * if the hostname contains a colon :, we got a port number   *
@@ -169,7 +168,7 @@ int create_socket(char url_str[], BIO *out) {
   if(strchr(hostname, ':')) {
     tmp_ptr = strchr(hostname, ':');
     /* the last : starts the port number, if avail, i.e. 8443 */
-    strncpy(portnum, tmp_ptr+1,  sizeof(portnum));
+    strncpy(portnum, tmp_ptr+1,  sizeof(portnum)-1);
     *tmp_ptr = '\0';
   }
 

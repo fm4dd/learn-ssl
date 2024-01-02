@@ -14,8 +14,8 @@
 
 int main() {
 
-  const char ca_bundlestr[] = "./ca-bundle.pem";
-  const char cert_filestr[] = "./cert-file.pem";
+  const char ca_bundlestr[] = "./demo/ca-bundle.pem";
+  const char cert_filestr[] = "./demo/cert-file.pem";
 
   BIO              *certbio = NULL;
   BIO               *outbio = NULL;
@@ -24,14 +24,7 @@ int main() {
   X509_NAME    *certsubject = NULL;
   X509_STORE         *store = NULL;
   X509_STORE_CTX  *vrfy_ctx = NULL;
-  int ret;
-
-  /* ---------------------------------------------------------- *
-   * These function calls initialize openssl for correct work.  *
-   * ---------------------------------------------------------- */
-  OpenSSL_add_all_algorithms();
-  ERR_load_BIO_strings();
-  ERR_load_crypto_strings();
+  int vrfy_err, ret;
 
   /* ---------------------------------------------------------- *
    * Create the Input/Output BIO's.                             *
@@ -54,12 +47,16 @@ int main() {
    * Load the certificate and cacert chain from file (PEM).     *
    * ---------------------------------------------------------- */
   ret = BIO_read_filename(certbio, cert_filestr);
-  if (! (cert = PEM_read_bio_X509(certbio, NULL, 0, NULL)))
-    BIO_printf(outbio, "Error loading cert into memory\n");
+  if (! (cert = PEM_read_bio_X509(certbio, NULL, 0, NULL))) {
+    BIO_printf(outbio, "Error loading cert into memory: %s\n", cert_filestr);
+    exit(1);
+  }
 
   ret = X509_STORE_load_locations(store, ca_bundlestr, NULL);
-  if (ret != 1)
-    BIO_printf(outbio, "Error loading CA cert or chain file\n");
+  if (ret != 1) {
+    BIO_printf(outbio, "Error loading CA cert or chain file: %s\n", ca_bundlestr);
+    exit(1);
+  }
 
   /* ---------------------------------------------------------- *
    * Initialize the ctx structure for a verification operation: *
@@ -76,9 +73,20 @@ int main() {
   ret = X509_verify_cert(vrfy_ctx);
   BIO_printf(outbio, "Verification return code: %d\n", ret);
 
-  if(ret == 0 || ret == 1)
+  /* ---------------------------------------------------------- *
+   * A negative return value indicates a verification error     *
+   * ---------------------------------------------------------- */
+  if (ret < 0) {
+    BIO_printf(outbio, "Error loading CA cert or chain file: %s\n", ca_bundlestr);
+    exit(1);
+  }
+
+  /* ---------------------------------------------------------- *
+   * For verification return of 0 or 1, check validation result *
+   * ---------------------------------------------------------- */
+  vrfy_err = X509_STORE_CTX_get_error(vrfy_ctx);
   BIO_printf(outbio, "Verification result text: %s\n",
-             X509_verify_cert_error_string(vrfy_ctx->error));
+             X509_verify_cert_error_string(vrfy_err));
 
   /* ---------------------------------------------------------- *
    * The error handling below shows how to get failure details  *

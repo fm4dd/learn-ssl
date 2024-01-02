@@ -6,28 +6,39 @@
  *                                                              *
  * compile:     gcc pkcs12test.c -o pkcs12test -lssl -lcrypto   *
  * ------------------------------------------------------------ */
-
 #include <stdio.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <string.h>
 #include <openssl/x509.h>
 #include <openssl/pem.h>
 #include <openssl/pkcs12.h>
 #include <openssl/err.h>
 
-int main() {
+#define CERTKEY  "./demo/cert-file.key"
+#define CERTFILE "./demo/cert-file.pem"
+#define CAFILE   "./demo/cacert.pem"
+#define P12FILE  "./demo/demo.p12"
 
+int main() {
    X509		  *cert, *cacert;
    STACK_OF(X509) *cacertstack;
    PKCS12	  *pkcs12bundle;
    EVP_PKEY	  *cert_privkey;
    FILE 	  *cacertfile, *certfile, *keyfile, *pkcs12file;
-   int		  bytes = 0;
+   int		  ret, bytes = 0;
+   struct stat    fstat;
 
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
 /* ------------------------------------------------------------ *
  * 1.) These function calls are essential to make PEM_read and  *
  *     other openssl functions work.                            *
  * ------------------------------------------------------------ */
    OpenSSL_add_all_algorithms();
    ERR_load_crypto_strings();
+#endif
 
 /*--------------------------------------------------------------*
  * 2.) we load the certificates private key                     *
@@ -35,8 +46,10 @@ int main() {
  *--------------------------------------------------------------*/
    if ((cert_privkey = EVP_PKEY_new()) == NULL)
       printf("Error creating EVP_PKEY structure.\n");
-   if (! (keyfile = fopen("./testkey.pem", "r")))
-      printf("Error cant read certificate private key file.\n");
+   if (! (keyfile = fopen(CERTKEY, "r"))) {
+      printf("Error cant read certificate private key file: %s\n", CERTKEY);
+      exit(1);
+   }
    if (! (cert_privkey = PEM_read_PrivateKey(keyfile, NULL, NULL, NULL)))
       printf("Error loading certificate private key content.\n");
    fclose(keyfile);
@@ -44,8 +57,10 @@ int main() {
 /*--------------------------------------------------------------*
  * 3.) we load the corresponding certificate                    *
  *--------------------------------------------------------------*/
-   if (! (certfile = fopen("./testcert.pem", "r")))
-      printf("Error cant read certificate file.\n");
+   if (! (certfile = fopen(CERTFILE, "r"))) {
+      printf("Error cant read certificate file: %s\n", CERTFILE);
+      exit(1);
+   }
    if (! (cert = PEM_read_X509(certfile, NULL, NULL, NULL)))
       printf("Error loading cert into memory.\n");
    fclose(certfile);
@@ -53,8 +68,10 @@ int main() {
 /*--------------------------------------------------------------*
  * 4.) we load the CA certificate who signed it                 *
  *--------------------------------------------------------------*/
-   if (! (cacertfile = fopen("./cacert.pem", "r")))
-      printf("Error cant read cert store certificate file.\n");
+   if (! (cacertfile = fopen(CAFILE, "r"))) {
+      printf("Error cant read ca certificate file: %s\n", CAFILE);
+      exit(1);
+   }
    if (! (cacert = PEM_read_X509(cacertfile,NULL,NULL,NULL)))
       printf("Error loading CA certificate into memory.\n");
    fclose(cacertfile);
@@ -91,10 +108,15 @@ int main() {
 /*--------------------------------------------------------------*
  * 7.) we write the PKCS12 structure out to file                *
  *--------------------------------------------------------------*/
-   if (! (pkcs12file = fopen("./testcert.p12", "w")))
-      printf("Error cant open pkcs12 certificate file for writing.\n");
-   bytes = i2d_PKCS12_fp(pkcs12file, pkcs12bundle);
-   if (bytes <= 0) printf("Error writing PKCS12 certificate.\n");
+   if (! (pkcs12file = fopen(P12FILE, "w"))) {
+      printf("Error cant open pkcs12 file for writing: %s\n", P12FILE);
+      exit(1);
+   }
+   ret = i2d_PKCS12_fp(pkcs12file, pkcs12bundle);
+   if (ret == 0) {
+      printf("Error writing PKCS12 certificate.\n");
+      exit(1);
+   }
 
 /*--------------------------------------------------------------*
  * 8.) we are done, let's clean up                              *
@@ -104,6 +126,17 @@ int main() {
    X509_free(cacert);
    sk_X509_free(cacertstack);
    PKCS12_free(pkcs12bundle);
+
+   /* get file status data */
+   if (stat(P12FILE, &fstat) != 0) {
+      printf("Error cannot stat p12 file: %s\n", P12FILE);
+      printf("%s\n", strerror(errno));
+      exit(1);
+   }
+   
+   bytes = fstat.st_size;
+   printf("Created PKCS12 file %s with %d Bytes.\n", P12FILE, bytes);
+
    return(0);
 }
 

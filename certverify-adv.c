@@ -33,7 +33,7 @@ X509_STORE_CTX  *verify_file_direct(const char *file);
  * in a stack, which is then to be added to a store or CTX.   * 
  * ---------------------------------------------------------- */
 STACK_OF(X509_INFO) *X509_load_ca_file(int *cert_counter,
-                      struct stat *fstat, const char *file);
+                      struct stat fstat, const char *file);
 
 /* ---------------------------------------------------------- *
  * verify_mem_store() puts the CA info stack into a store     *
@@ -54,8 +54,8 @@ BIO               *outbio = NULL;
 BIO               *cabio  = NULL;
 X509                *cert = NULL;
 
-const char ca_bundlestr[] = "./ca-bundle.pem";
-const char cert_filestr[] = "./cert-file.pem";
+const char ca_bundlestr[] = "./demo/ca-bundle.pem";
+const char cert_filestr[] = "./demo/cert-file.pem";
 char cacert_str[] =
 "-----BEGIN CERTIFICATE-----\n\
 MIIDvDCCAyWgAwIBAgIJAMbHBAm8IlugMA0GCSqGSIb3DQEBBQUAMIGbMQswCQYD\n\
@@ -83,14 +83,13 @@ dQbu1z6rOXJb8EegubJNkYTcuxsKLijIfJDnK2noqPt03puJEsBxosN14XPEhIEO\n\
 int main() {
 
   X509          *error_cert = NULL;
-  X509              *cacert = NULL;
   X509_NAME    *certsubject = NULL;
   STACK_OF(X509_INFO) *list = NULL;
   X509_STORE_CTX  *vrfy_ctx = NULL;
   int cert_counter = 0;
-  int i, ret, depth;
+  int vrfy_err, i, ret, depth;
   unsigned int vrfy_flag;
-  char* vrfy_name;
+  char *vrfy_name = NULL;
   struct stat ca_stat;
 
   struct Vrfy_Flags {
@@ -147,13 +146,6 @@ int main() {
   flagslist[14].flag_desc = "This flag enables the check if the root CA has a self-signed cerificate signature. By default this check is disabled because it doesn't add any additional security. In some cases, applications might want to check the signature anyway. A side effect of not checking the root CA signature is that disabled or unsupported message digests on the root CA are not treated as fatal errors.";
 
   /* ---------------------------------------------------------- *
-   * These function calls initialize openssl for correct work.  *
-   * ---------------------------------------------------------- */
-  OpenSSL_add_all_algorithms();
-  ERR_load_BIO_strings();
-  ERR_load_crypto_strings();
-
-  /* ---------------------------------------------------------- *
    * Create the Input/Output BIO's.                             *
    * ---------------------------------------------------------- */
   outbio  = BIO_new(BIO_s_file());
@@ -165,13 +157,16 @@ int main() {
   certbio = BIO_new(BIO_s_file());
   ret = BIO_read_filename(certbio, cert_filestr);
 
-  if (! (cert = PEM_read_bio_X509(certbio, NULL, 0, NULL)))
-    BIO_printf(outbio, "Error loading cert into memory\n");
+  if (! (cert = PEM_read_bio_X509(certbio, NULL, 0, NULL))) {
+    BIO_printf(outbio, "Error loading cert into memory: %s\n", cert_filestr);
+    exit(1);
+  }
 
   /* ---------------------------------------------------------- *
    * Load a CA cert file into a BIO and then into a x509 stack. *
    * ---------------------------------------------------------- */
-  list = X509_load_ca_file(&cert_counter, &ca_stat, ca_bundlestr);
+  list = X509_load_ca_file(&cert_counter, ca_stat, ca_bundlestr);
+
   /* ---------------------------------------------------------- *
    * Create a verification context from the stack, add the cert *
    * ---------------------------------------------------------- */
@@ -211,9 +206,20 @@ int main() {
   ret = X509_verify_cert(vrfy_ctx);
   BIO_printf(outbio, "Verification return code: %d\n", ret);
 
-  if(ret == 0 || ret == 1)
+  /* ---------------------------------------------------------- *
+   * A negative return value indicates a verification error     *
+   * ---------------------------------------------------------- */
+  if (ret < 0) {
+    BIO_printf(outbio, "Error loading CA cert or chain file: %s\n", ca_bundlestr);
+    exit(1);
+  }
+
+  /* ---------------------------------------------------------- *
+   * For verification return of 0 or 1, check validation result *
+   * ---------------------------------------------------------- */
+  vrfy_err = X509_STORE_CTX_get_error(vrfy_ctx);
   BIO_printf(outbio, "Verification result text: %s\n",
-             X509_verify_cert_error_string(vrfy_ctx->error));
+             X509_verify_cert_error_string(vrfy_err));
 
   /* ---------------------------------------------------------- *
    * The error handling below shows how to get failure details  *
@@ -245,7 +251,6 @@ static int verify_callback(int preverify_ok, X509_STORE_CTX *ctx) {
   char    buf[4096] = "";
   X509   *err_cert;
   int     err, depth;
-  SSL    *ssl;
 
   err_cert = X509_STORE_CTX_get_current_cert(ctx);
   err = X509_STORE_CTX_get_error(ctx);
@@ -333,7 +338,7 @@ X509_STORE_CTX  *verify_file_direct(const char *file) {
  * in a stack, which is then to be added to a store or CTX.   *
  * ---------------------------------------------------------- */
 STACK_OF(X509_INFO) *X509_load_ca_file(int *cert_count, 
-                                       struct stat *fstat, const char *file) {
+                                       struct stat fstat, const char *file) {
   STACK_OF(X509_INFO) *st = NULL;
   BIO *inbio=NULL;
 
@@ -342,14 +347,16 @@ STACK_OF(X509_INFO) *X509_load_ca_file(int *cert_count,
     BIO_printf(outbio, "Error receiving a valid CA bundle file name.\n");
 
   /* get file status data */
-  if (stat(file, fstat) != 0)
-    BIO_printf(outbio, "Error cannot stat cert bundle file.\n");
+  if (stat(file, &fstat) != 0) {
+    BIO_printf(outbio, "Error cannot stat cert bundle file: %s.\n", file);
+    exit(1);
+  }
 
   /* complain if the file is empty (0 bytes) */
-  if(fstat->st_size == 0)
+  if(fstat.st_size == 0)
     BIO_printf(outbio, "Error cert bundle file size is zero bytes.\n");
 
-  inbio=BIO_new(BIO_s_file_internal());
+  inbio=BIO_new(BIO_s_file());
 
   /* check if we can open the file for reading */
   if ((inbio == NULL) || (BIO_read_filename(inbio, file) <= 0))
@@ -362,9 +369,9 @@ STACK_OF(X509_INFO) *X509_load_ca_file(int *cert_count,
   /* get the number of certs that are now on the stack */
   *cert_count = sk_X509_INFO_num(st);
 
-  /* return the STACK_OF(X509_INFO) pointer, or NULL */
+  /* return the STACK_OF(X509_INFO) pointer, or exit */
   if (cert_count > 0) return st;
-  else return NULL;
+  else exit(1);
 }
 
 /* ---------------------------------------------------------- *
@@ -374,7 +381,7 @@ STACK_OF(X509_INFO) *X509_load_ca_file(int *cert_count,
 X509_STORE_CTX  *verify_mem_store(STACK_OF(X509_INFO) *st) {
   X509_STORE         *store = NULL;
   X509_STORE_CTX       *ctx = NULL;
-  STACK_OF(X509)  *ca_stack = NULL;
+  //STACK_OF(X509)  *ca_stack = NULL;
   X509_INFO      *list_item = NULL;
   int cert_count            = 0;
   int i                     = 0;
@@ -398,8 +405,10 @@ X509_STORE_CTX  *verify_mem_store(STACK_OF(X509_INFO) *st) {
   /* ---------------------------------------------------------- *
    * Complain if there is no cert                               *
    * ---------------------------------------------------------- */
-  if (! cert_count > 0)
+  if (! (cert_count > 0)) {
     BIO_printf(outbio, "Error no certs on stack.\n");
+    exit(1);
+  }
 
   /* ---------------------------------------------------------- *
    * Cycle through all info stack items, extract the X509 cert  *
@@ -440,8 +449,10 @@ X509_STORE_CTX  *verify_mem_stack(STACK_OF(X509_INFO) *st) {
   /* ---------------------------------------------------------- *
    * Complain if there is no cert                               *
    * ---------------------------------------------------------- */
-  if (! cert_count > 0) 
+  if (! (cert_count > 0)) {
     BIO_printf(outbio, "Error no certs on stack.\n");
+    exit(1);
+  }
 
   /* ---------------------------------------------------------- *
    * Initialize the X509 stack ca_stack                         *

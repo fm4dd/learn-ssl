@@ -14,20 +14,13 @@
 int main() {
 
   STACK_OF(X509_INFO) *certstack;
-  const char   ca_filestr[] = "./cabundle.pem";
+  const char   ca_filestr[] = "./demo/ca-bundle.pem";
   X509_INFO *stack_item     = NULL;
   X509_NAME    *certsubject = NULL;
   BIO             *stackbio = NULL;
   BIO               *outbio = NULL;
   X509                *cert = NULL;
   int i;
-
-  /* ---------------------------------------------------------- *
-   * These function calls initialize openssl for correct work.  *
-   * ---------------------------------------------------------- */
-  OpenSSL_add_all_algorithms();
-  ERR_load_BIO_strings();
-  ERR_load_crypto_strings();
 
   /* ---------------------------------------------------------- *
    * Create the Input/Output BIO's.                             *
@@ -38,8 +31,10 @@ int main() {
   /* ---------------------------------------------------------- *
    * Load the file with the list of certificates in PEM format  *
    * ---------------------------------------------------------- */
-  if (BIO_read_filename(stackbio, ca_filestr) <= 0)
-    BIO_printf(outbio, "Error loading cert bundle into memory\n");
+  if (BIO_read_filename(stackbio, ca_filestr) <= 0) {
+    BIO_printf(outbio, "Error loading cert bundle into memory: %s\n", ca_filestr);
+    exit(1);
+  }
 
   certstack = PEM_X509_INFO_read_bio(stackbio, NULL, NULL, NULL);
 

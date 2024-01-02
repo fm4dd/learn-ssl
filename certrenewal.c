@@ -14,8 +14,8 @@
 
 int main() {
 
-  const char cert_filestr[] = "./cert-file.pem";
-  const char pkey_filestr[] = "./pkey-file.pem";
+  const char cert_filestr[] = "./demo/cert-file.pem";
+  const char pkey_filestr[] = "./demo/cert-file.key";
   BIO              *certbio = NULL;
   BIO              *pkeybio = NULL;
   BIO               *outbio = NULL;
@@ -24,13 +24,6 @@ int main() {
   EVP_PKEY            *pkey = NULL;
   EVP_MD      const *digest = EVP_sha1();
   int ret;
-
-  /* ---------------------------------------------------------- *
-   * These function calls initialize openssl for correct work.  *
-   * ---------------------------------------------------------- */
-  OpenSSL_add_all_algorithms();
-  ERR_load_BIO_strings();
-  ERR_load_crypto_strings();
 
   /* ---------------------------------------------------------- *
    * Create the Input/Output BIO's.                             *
@@ -44,17 +37,22 @@ int main() {
    * ---------------------------------------------------------- */
   ret = BIO_read_filename(certbio, cert_filestr);
   if (! (cert = PEM_read_bio_X509(certbio, NULL, 0, NULL))) {
-    BIO_printf(outbio, "Error loading cert into memory\n");
-    exit(-1);
+    BIO_printf(outbio, "Error loading cert into memory: %s\n", cert_filestr);
+    exit(1);
   }
 
   /* ---------------------------------------------------------- *
    * Load the original private key from file (PEM).             *
    * ---------------------------------------------------------- */
   ret = BIO_read_filename(pkeybio, pkey_filestr);
+  if(ret == 0) {
+    BIO_printf(outbio, "Error loading private key into BIO: %s\n", pkey_filestr);
+    exit(1);
+  }
+
   if (! (pkey = PEM_read_bio_PrivateKey(pkeybio, NULL, 0, NULL))) {
-    BIO_printf(outbio, "Error loading private key into memory\n");
-    exit(-1);
+    BIO_printf(outbio, "Error loading private key into memory: %s\n", pkey_filestr);
+    exit(1);
   }
 
   /* ---------------------------------------------------------- *
@@ -63,7 +61,7 @@ int main() {
    * ---------------------------------------------------------- */
   if ((certreq = X509_to_X509_REQ(cert, pkey, digest)) == NULL) {
     BIO_printf(outbio, "Error converting certificate into request.\n");
-    exit(-1);
+    exit(1);
   }
 
   /* ---------------------------------------------------------- *
