@@ -1,7 +1,7 @@
 /* ------------------------------------------------------------ *
  * file:        certpubkey.c                                    *
  * purpose:     Example code to extract public keydata in certs *
- * author:      09/24/2012 Frank4DD                             *
+ * author:      09/24/2012 Frank4DD, updated 01/17/2024         *
  *                                                              *
  * compile:     gcc -o certpubkey certpubkey.c -lssl -lcrypto   *
  * ------------------------------------------------------------ */
@@ -10,6 +10,9 @@
 #include <openssl/err.h>
 #include <openssl/pem.h>
 #include <openssl/x509.h>
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+#include <openssl/core_names.h>
+#endif
 
 int main() {
 
@@ -45,17 +48,30 @@ int main() {
    * ---------------------------------------------------------- */
   /* display the key type and size here */
   if (pkey) {
-    switch (EVP_PKEY_base_id(pkey))  {
-      case EVP_PKEY_RSA:
-        BIO_printf(outbio, "%d bit RSA Key\n\n", EVP_PKEY_bits(pkey));
-        break;
-      case EVP_PKEY_DSA:
-        BIO_printf(outbio, "%d bit DSA Key\n\n", EVP_PKEY_bits(pkey));
-        break;
-      default:
-        BIO_printf(outbio, "%d bit unknown Key\n\n", EVP_PKEY_bits(pkey));
-        break;
+    BIO_printf(outbio, "Retrieved %d bit %s key", EVP_PKEY_bits(pkey),
+                                     EVP_PKEY_get0_type_name(pkey));
+    if(EVP_PKEY_base_id(pkey) == EVP_PKEY_EC) {
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+        char curvestr[80];
+        EVP_PKEY_get_utf8_string_param(pkey,
+                            OSSL_PKEY_PARAM_GROUP_NAME,
+                            curvestr,
+                            sizeof(curvestr),
+                            NULL);
+        BIO_printf(outbio, ", type %s", curvestr);
+#else
+        EC_KEY *myecc = NULL;
+        myecc = EVP_PKEY_get1_EC_KEY(pkey);
+        const EC_GROUP *ecgrp = EC_KEY_get0_group(myecc);
+        BIO_printf(outbio, ", type %s",
+                OBJ_nid2sn(EC_GROUP_get_curve_name(ecgrp)));
+#endif
     }
+    BIO_printf(outbio, " from %s\n\n", cert_filestr);
+  }
+  else {
+    BIO_printf(outbio, "Could not get public key from %s\n", cert_filestr);
+    exit(1);
   }
 
   if(!PEM_write_bio_PUBKEY(outbio, pkey))
